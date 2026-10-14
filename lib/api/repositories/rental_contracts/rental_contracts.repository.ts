@@ -232,26 +232,27 @@ export const rentalContractRepository = {
     contract_tenants: contract_tenants[];
   }> => {
     return await prisma.$transaction(async (tx) => {
-      // Tạo Hợp đồng thuê
+      // Tạo hợp đồng thuê
       const rental_contract = await tx.rental_contracts.create({
         data: inputRentalContract,
       });
 
       const createdContractTenants: contract_tenants[] = [];
 
-      //Duyệt qua danh sách N người thuê
-      for (const tenantItem of tenants) {
+      // Duyệt danh sách người thuê
+      for (const [index, tenantItem] of tenants.entries()) {
         let targetProfileId: bigint;
 
         if (tenantItem.profile_id) {
-          // TH 1: KHÁCH CŨ -> Dùng trực tiếp profile_id sẵn có
+          // TH 1: Khách cũ -> Sử dụng profile_id có sẵn
           targetProfileId = BigInt(tenantItem.profile_id);
         } else if (tenantItem.inputUser && tenantItem.inputProfile) {
-          // TH 2: KHÁCH MỚI -> Tạo User + Profile mới
+          // TH 2: Khách mới -> Tạo User
           const user = await tx.users.create({
             data: tenantItem.inputUser,
           });
 
+          // Tạo Profile và liên kết với User
           const profile = await tx.profiles.create({
             data: {
               ...tenantItem.inputProfile,
@@ -264,28 +265,26 @@ export const rentalContractRepository = {
           targetProfileId = profile.id;
         } else {
           throw new Error(
-            "Mỗi khách thuê phải có profile_id (khách cũ) hoặc đủ thông tin User & Profile (khách mới).",
+            "Mỗi khách thuê phải có profile_id (khách cũ) hoặc đủ thông tin User và Profile (khách mới).",
           );
         }
 
-        // Tạo bản ghi liên kết vào contract_tenants
+        //Tạo liên kết người thuê với hợp đồng
         const contract_tenant = await tx.contract_tenants.create({
           data: {
+            contract_id: rental_contract.id,
+            profile_id: targetProfileId,
             joined_at: tenantItem.joined_at
               ? new Date(tenantItem.joined_at)
               : new Date(),
-            profiles: {
-              connect: { id: targetProfileId },
-            },
-            rental_contracts: {
-              connect: { id: rental_contract.id },
-            },
+            role: index === 0 ? "REPRESENTATIVE" : "MEMBER",
           },
         });
 
         createdContractTenants.push(contract_tenant);
       }
 
+      // Trả kết quả
       return {
         rental_contract,
         contract_tenants: createdContractTenants,
