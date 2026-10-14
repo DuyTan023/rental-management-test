@@ -63,7 +63,7 @@ export const contractDepositRepository = {
       where: { contract_id },
       include: {
         rental_contracts: true,
-        deposit_transactions: true,
+        //deposit_transactions: true,
       },
     });
   },

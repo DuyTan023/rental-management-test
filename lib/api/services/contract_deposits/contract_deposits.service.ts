@@ -102,14 +102,157 @@ export const contractDepositService = {
   },
 
   // Khấu trừ cọc
-  // deductDeposit(),
+  deductDeposit: async (
+    id: bigint, 
+    amount: Prisma.Decimal, // số tiền cần khấu trừ
+    reason: string, // lý do kháu trừ
+    createdBy?: bigint // người thực hiện khấu trừ (chủ trọ)
+  ) => {
+    try {
+      // Lấy khoản cọc + kiểm tra sự tồn tại
+      const deposit = await contractDepositRepository.findById(id);
+      if (!deposit) throw new Error("CONTRACt_DEPOSIT_NOT_FOUND")
+      
+      // Kiểm tra số tiền khấu trừ nhập vào phải lớn hơn 0
+      if (amount.lte(0)) throw new Error("INVALID_DEDUCT_AMOUNT")
+      
+      // Ràng buộc phải có lý do khấu trừ
+      if (!reason.trim()) throw new Error("DEDUCTION_REASON_REQUIRED")
+      
+      // KIểm tra được khấu trừ hay không (trạng thái cọc "Đã nhận" hoặc "Khấu trừ 1 phần") mới đc khấu trừ tiếp
+      if (deposit.status !== "RECEIVED" && deposit.status !== "PARTIALLY_DEDUCTED") throw new Error("INVALID_DEPOSIT_STATUS")
+      
+      // Chuẩn hóa các giá trị tiền về Prisma.Decimal
+      const initialAmount = new Prisma.Decimal(deposit.initial_amount.toString(),); // Số cọc bann đầu
+      const refundedAmount = new Prisma.Decimal(deposit.refunded_amount.toString(),); // Số tiền đã hoàn (không có thì mặc định là 0)
+      const deductedAmount = new Prisma.Decimal(deposit.deducted_amount.toString(),); // Số tiền đã khấu trừ tính đến thời điểm hiện tại
 
-  // Hoàn cọc
-  // refundDeposit(),
+      // TIền còn lại = tiền cọc - tiền đã hoàn trả(nếu có) - tiền đã khấu trừ
+      const remainingAmount = initialAmount.minus(refundedAmount).minus(deductedAmount);
 
+      // KIểm tra số dư sau khi khấu trừ nếu < 0 báo lỗi 
+      if (remainingAmount.lte(0)) throw new Error("NO_DEPOSIT_BALANCE")
+      
+      // Ràng buộc số tiền cần khấu trừ không đc vượt quá số dư hiện tại 
+      if (amount.gt(remainingAmount)) throw new Error("DEDUCT_AMOUNT_EXCEEDS_REMAINING")
+      
+      // Tính tổng khấu trừ Số tiền đã khấu trừ + khấu trừ mới 
+      const newDeductedAmount = deductedAmount.plus(amount);
+
+      // Số dư mới  = tổng cọc - khấu trừ mới - tiền đã hoàn (nếu có)
+      const newRemainingAmount = initialAmount.minus(newDeductedAmount).minus(refundedAmount);
+
+      // Xác định trạng thái sau khi khấu trừ (Khấu trừ 1 phần  - khấu trừ toàn bộ - quyết toán)
+      let newStatus:
+        | "PARTIALLY_DEDUCTED"
+        | "FULLY_DEDUCTED"
+
+      if (newRemainingAmount.isZero()) { // Số dư mới sau khấu trừ về 0
+        newStatus = "FULLY_DEDUCTED"
+      } else { // Số dư tiền cọc vần còn (khấu trừ 1 phần)
+        newStatus = "PARTIALLY_DEDUCTED"
+      }
+
+      // Cập nhật khoản cọc và tạo lịch sử giao dịch
+      return contractDepositRepository.updateContractDeposit({
+        id,
+        inputContractDeposit: {
+          deducted_amount: newDeductedAmount,
+          deduction_reason: reason.trim(),
+          status: newStatus,
+        },
+        inputDepositTransaction: {
+          type: "REFUND",
+          amount,
+          description: reason.trim(),
+          ...(createdBy !== undefined
+            ? {
+                users: {
+                  connect: { id: createdBy },
+                },
+              }
+            : {}),
+        }
+    })
+     } catch (error) {
+        if (
+          error instanceof Error &&
+          [
+            "CONTRACT_DEPOSIT_NOT_FOUND",
+            "INVALID_DEDUCT_AMOUNT",
+            "DEDUCTION_REASON_REQUIRED",
+            "INVALID_DEPOSIT_STATUS",
+            "NO_DEPOSIT_BALANCE",
+            "DEDUCT_AMOUNT_EXCEEDS_REMAINING",
+          ].includes(error.message)
+        ) {
+          throw error;
+        }
+      throw new Error("SERVER_ERROR");
+    }
+  },
   // Điều chỉnh cọc
   //adjustDeposit()
 
   // Tất toán cọc
-  //settleDeposit(),
+  settleDeposit: async (
+    id: bigint, 
+    createdBy?: bigint // người thực hiện quyết toán (chủ trọ)
+  ) => {
+    try {
+      // Lấy khoản cọc  + kiểm tra sự tồn tại
+      const deposit = await contractDepositRepository.findById(id);
+      if (!deposit) throw new Error("CONTRACT_DEPOSIT_NOT_FOUND")
+      
+      // KIểm tra có hoàn tiền cọc hay không (chỉ trạng thái đã nhận hoặc khấu trừ 1 phần mới hoàn lại khi quyết toán)
+      if (deposit.status !== "RECEIVED" && deposit.status !== "PARTIALLY_DEDUCTED") throw new Error("INVALID_DEPOSIT_STATUS")
+      
+      
+      //Chuẩn hóa các giá trị tiền về Prisma.Decimal
+      const initialAmount   = new Prisma.Decimal(deposit.initial_amount.toString(),); // Tông tiền cọc theo hợp đồng đã giao dịch
+      const deductedAmount = new Prisma.Decimal(deposit.deducted_amount.toString(),); // Tiền đã khấu trừ nếu có
+      
+      // Số dư còn lại cần hoàn trả khi quyết toán
+      const remainingAmount = initialAmount.minus(deductedAmount);
+
+      // Kiểm tra coi kết kết quả không cho phép số dư âm
+      if (remainingAmount.lt(0)) throw new Error("NO_DEPOSIT_BALANCE")
+      
+      // Cập nhật tiền cần hoàn trả sau quyết toán Tiền hoàn trả  = tổng cọc ban đầu - tổng khấu trừ
+      const refundedAmount = remainingAmount
+      
+      // Cập nhật thông tin cọc đã quyết toán + tiền hoàn trả nếu có , tạo 1 lịch sử giao dịch cọc đã hoàn tiền 
+      return await contractDepositRepository.updateContractDeposit({
+        id,
+        inputContractDeposit: {
+          refunded_amount: refundedAmount,
+          status: "SETTLED",
+          settled_date: new Date(),
+        },
+        inputDepositTransaction: {
+          type: "DEDUCT",
+          amount:refundedAmount,
+          ...(createdBy !== undefined
+            ? {
+                users: {
+                  connect: { id: createdBy },
+                },
+              }
+            : {}),
+        }
+      });
+    } catch (error) {
+        if (
+            error instanceof Error &&
+            [
+              "CONTRACT_DEPOSIT_NOT_FOUND",
+              "INVALID_DEPOSIT_STATUS",
+              "NO_DEPOSIT_BALANCE",
+            ].includes(error.message)
+          ) {
+            throw error;
+          }
+      throw new Error("SERVER_ERROR");
+    } 
+  },
 };
