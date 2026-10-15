@@ -3,7 +3,12 @@ import {
   contractDepositRepository,
   type CreateFullContractDepositParams,
 } from "../../repositories/contract_deposits/contract_deposits.repository";
-
+export type deductDepositInput = {
+  id: bigint;
+  amount: Prisma.Decimal; // số tiền cần khấu trừ
+  reason: string; // lý do kháu trừ
+  createdBy?: bigint; // người thực hiện khấu trừ (chủ trọ)
+};
 export const contractDepositService = {
   createContractDeposit: async (params: CreateFullContractDepositParams) => {
     try {
@@ -103,12 +108,14 @@ export const contractDepositService = {
 
   // Khấu trừ cọc
   deductDeposit: async (
-    id: bigint, 
-    amount: Prisma.Decimal, // số tiền cần khấu trừ
-    reason: string, // lý do kháu trừ
-    createdBy?: bigint // người thực hiện khấu trừ (chủ trọ)
+    deductDeposit: deductDepositInput
   ) => {
     try {
+
+      const id = deductDeposit.id;
+      const amount = deductDeposit.amount;
+      const reason = deductDeposit.reason;
+      const createdBy = deductDeposit?.createdBy;
       // Lấy khoản cọc + kiểm tra sự tồn tại
       const deposit = await contractDepositRepository.findById(id);
       if (!deposit) throw new Error("CONTRACt_DEPOSIT_NOT_FOUND")
@@ -162,7 +169,7 @@ export const contractDepositService = {
           status: newStatus,
         },
         inputDepositTransaction: {
-          type: "REFUND",
+          type: "DEDUCT",
           amount,
           description: reason.trim(),
           ...(createdBy !== undefined
@@ -230,7 +237,7 @@ export const contractDepositService = {
           settled_date: new Date(),
         },
         inputDepositTransaction: {
-          type: "DEDUCT",
+          type: "REFUND",
           amount:refundedAmount,
           ...(createdBy !== undefined
             ? {
