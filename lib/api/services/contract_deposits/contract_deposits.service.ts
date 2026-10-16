@@ -1,4 +1,4 @@
-import { Prisma } from "@/generated/prisma/client";
+import { contract_deposits, Prisma } from "@/generated/prisma/client";
 import {
   contractDepositRepository,
   type CreateFullContractDepositParams,
@@ -26,6 +26,23 @@ export const contractDepositService = {
   },
 
   getById: async (contract_id: bigint) => {
+    try {
+      const contract_deposit =
+        await contractDepositRepository.findDepositByContractId(contract_id);
+      if (!contract_deposit) throw new Error("CONTRACT_DEPOSIT_NOT_FOUND");
+      return contract_deposit;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "CONTRACT_DEPOSIT_NOT_FOUND"
+      ) {
+        throw error;
+      }
+      throw new Error("SERVER_ERROR");
+    }
+  },
+
+  getByContractId: async (contract_id: bigint): Promise<contract_deposits> => {
     try {
       const contract_deposit =
         await contractDepositRepository.findDepositByContractId(contract_id);

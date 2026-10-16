@@ -67,6 +67,7 @@ model rooms {
   created_at       DateTime           @default(now()) @db.Timestamptz(6)
   updated_at       DateTime           @default(now()) @db.Timestamptz(6)
   rental_contracts rental_contracts[]
+  room_services    room_services[]
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -171,6 +172,36 @@ model deposit_transactions {
   users               users?                   @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model room_services {
+  id             BigInt    @id @default(autoincrement())
+  room_id        BigInt
+  service_id     BigInt
+  unit_price     Decimal   @db.Decimal(15, 2)
+  effective_from DateTime  @default(dbgenerated("CURRENT_DATE")) @db.Date
+  effective_to   DateTime? @db.Date
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  rooms          rooms     @relation(fields: [room_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  services       services  @relation(fields: [service_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([room_id, service_id, effective_from], map: "uq_room_service_period")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model services {
+  id                 BigInt          @id @default(autoincrement())
+  name               String          @db.VarChar(100)
+  unit               String          @db.VarChar(20)
+  type               service_type
+  default_unit_price Decimal         @default(0) @db.Decimal(15, 2)
+  is_active          Boolean         @default(true)
+  created_at         DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime        @default(now()) @db.Timestamptz(6)
+  room_services      room_services[]
+}
+
 enum account_role {
   LANDLORD
   TENANT
@@ -234,4 +265,15 @@ enum deposit_transaction_type {
   REFUND
   DEDUCT
   ADJUSTMENT
+}
+
+enum meter_type {
+  ELECTRICITY
+  WATER
+}
+
+enum service_type {
+  METERED
+  FIXED_PER_MONTH
+  FIXED_PER_HEAD
 }
