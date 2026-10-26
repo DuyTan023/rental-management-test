@@ -8,41 +8,51 @@ import { prisma } from "@/lib/prisma";
 type Tx = Prisma.TransactionClient;
 export const roomServiceRepository = {
   // Thêm 1 dịch vụ vào phòng
-  createRoomService: async (input: Prisma.room_servicesCreateInput): Promise<room_services> => {
+  createRoomService: async (
+    input: Prisma.room_servicesCreateInput,
+  ): Promise<room_services> => {
     return prisma.room_services.create({
-      data: input
+      data: input,
     });
   },
 
   // Lấy dịch vụ và giá dịch vụ của phòng theo ngày áp dụng dùng trong hóa đơn trễ (trường hợp đặc biệt hoặc tìm kiếm)
 
-  findByRoomId: async (room_id: bigint, service_id: bigint, date: Date): Promise<room_services | null> => {
+  findByRoomId: async (
+    room_id: bigint,
+    service_id: bigint,
+    date: Date,
+  ): Promise<room_services | null> => {
     return prisma.room_services.findFirst({
       where: {
         room_id,
-        service_id, 
+        service_id,
         effective_from: {
           lte: date, // ngày bắt đầu áp dụng phải nhoe hơn hoặc bằng ngày kiểm tra
         },
         OR: [
           { effective_to: null }, // Chưa xác định đc ngày kết thúc áp dụng -> đang được áp dụng
-          {effective_to: {gte: date}} // Ngày kết thúc >= ngày kiểm tra
+          { effective_to: { gte: date } }, // Ngày kết thúc >= ngày kiểm tra
         ],
       },
       orderBy: {
-        effective_from: "desc"
+        effective_from: "desc",
       },
-    })
+    });
   },
 
   findById: async (id: bigint): Promise<room_services | null> => {
     return prisma.room_services.findUnique({
-      where: { id }
+      where: { id },
     });
   },
 
   // Tìm giá đang được áp dụng cho dịch vụ của phòng
-  findCurrentRoomService: async (room_id: bigint, service_id: bigint, tx: Tx = prisma,): Promise<room_services | null> => {
+  findCurrentRoomService: async (
+    room_id: bigint,
+    service_id: bigint,
+    tx: Tx = prisma,
+  ): Promise<room_services | null> => {
     return tx.room_services.findFirst({
       where: {
         room_id,
@@ -50,17 +60,21 @@ export const roomServiceRepository = {
         effective_to: null,
       },
       orderBy: {
-        effective_from: "desc"
+        effective_from: "desc",
       },
     });
   },
-  
+
   // Đóng thời gian áp dụng giá cũ (khi cập nhật giá mới thì thêm 1 cái lịch sử mới -> phải đóng tg áp dụng lại giá hiện tại )
-  updateEffectiveTo: async(id: bigint, effective_to: Date, tx: Tx = prisma): Promise<room_services> => {
+  updateEffectiveTo: async (
+    id: bigint,
+    effective_to: Date,
+    tx: Tx = prisma,
+  ): Promise<room_services> => {
     return tx.room_services.update({
       where: { id },
       data: {
-        effective_to: effective_to
+        effective_to: effective_to,
       },
     });
   },
@@ -71,7 +85,7 @@ export const roomServiceRepository = {
     service_id: bigint,
     unit_price: number,
     effective_from: Date,
-    tx: Tx = prisma
+    tx: Tx = prisma,
   ): Promise<room_services> => {
     return tx.room_services.create({
       data: {
@@ -85,7 +99,7 @@ export const roomServiceRepository = {
   },
 
   // Ngừng áp dụng dịch vụ cho phòng bằng cách cập nhật ngày kết thúc
-  stopRoomService: async(
+  stopRoomService: async (
     id: bigint,
     effective_to: Date,
   ): Promise<room_services> => {
@@ -94,4 +108,4 @@ export const roomServiceRepository = {
       data: { effective_to },
     });
   },
-}
+};
